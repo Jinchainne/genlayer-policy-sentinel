@@ -15,6 +15,10 @@ This repo intentionally targets `Builder -> Intelligent Contracts`, not
 `Projects`. The focus is a reusable primitive, clear state design, meaningful
 consensus logic, and reviewer-friendly documentation.
 
+## Visual Overview
+
+![GenLayer Policy Sentinel architecture](docs/images/repo-architecture.svg)
+
 ## Why This Fits Intelligent Contracts
 
 This contract is not a thin wrapper around one prompt and not a learning-only
@@ -156,6 +160,45 @@ genlayer-policy-sentinel/
 |-- package.json
 `-- README.md
 ```
+
+## Directory Tree With Purpose
+
+```text
+genlayer-policy-sentinel
+├─ contracts
+│  └─ genlayer_policy_sentinel.py        # core intelligent contract primitive
+├─ deploy
+│  └─ 001_deploy_policy_sentinel.mjs     # Studionet deploy helper
+├─ docs
+│  ├─ contract-design.md                 # consensus and state design notes
+│  └─ images
+│     └─ repo-architecture.svg           # visual repo and workflow illustration
+├─ examples
+│  └─ example-reviews.md                 # reusable real-world review scenarios
+├─ scripts
+│  └─ verify-contract.mjs                # signal checker for contract primitives
+├─ src
+│  └─ genlayer-policy-sentinel-client.ts # real read/write client workflow
+├─ submission-pack
+│  ├─ JUDGE-NOTES.md                     # reviewer-facing acceptance notes
+│  └─ SUBMISSION-DESCRIPTION.md          # portal-ready summary
+├─ tests
+│  └─ submission-proof.test.mjs          # proof that the repo is submission-ready
+├─ .gitignore
+├─ package.json
+└─ README.md
+```
+
+## Builder Reading Path
+
+If a reviewer or builder opens this repo for the first time, the best order is:
+
+1. `README.md`
+2. `contracts/genlayer_policy_sentinel.py`
+3. `src/genlayer-policy-sentinel-client.ts`
+4. `docs/contract-design.md`
+5. `tests/submission-proof.test.mjs`
+6. `submission-pack/JUDGE-NOTES.md`
 
 ## Flow Illustration
 
