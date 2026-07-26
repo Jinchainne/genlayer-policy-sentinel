@@ -185,6 +185,15 @@ genlayer network studionet
 genlayer deploy --contract contracts/genlayer_policy_sentinel.py --rpc https://studio.genlayer.com/api
 ```
 
+### Live Studionet Deployment
+
+Deployed on **July 26, 2026**:
+
+- Contract address: `0x50C461d12aB74e2f0f9f3fe44a7823b13CCcF2A4`
+- Deployment tx: `0x6babe19d6cf8dfe0e72d632e35cd15efc38413bd4d31f2b16989e45b0c3d25a3`
+- Explorer contract: `https://explorer-studio.genlayer.com/contracts/0x50C461d12aB74e2f0f9f3fe44a7823b13CCcF2A4`
+- Explorer transaction: `https://explorer-studio.genlayer.com/tx/0x6babe19d6cf8dfe0e72d632e35cd15efc38413bd4d31f2b16989e45b0c3d25a3`
+
 ## Minimal Client Integration
 
 This repo includes a small builder-facing TypeScript helper:
