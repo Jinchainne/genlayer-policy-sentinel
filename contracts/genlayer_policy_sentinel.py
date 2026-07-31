@@ -305,6 +305,7 @@ Counter source:
             "rationale": "",
             "counter_note": "",
             "counter_source_url": "",
+            "counter_entries": [],
         }
         self.review_ids.append(normalized_review_id)
         self._save_review(normalized_review_id, payload)
@@ -315,12 +316,29 @@ Counter source:
         review = self._load_review(normalized_review_id)
         if review["resolved"]:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Review is already resolved")
+        sender = str(gl.message.sender_address)
+        # Only submitter or policy creator can add counter-context
+        policy = self._load_policy(review["policy_id"])
+        if sender != review["submitter"] and sender != policy["created_by"]:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only submitter or policy creator can add counter-context")
         if len(str(counter_note).strip()) < 16:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Counter note is too short")
+        # Append-only: store counter entries as a list
+        counter_entries = review.get("counter_entries", [])
+        counter_entries.append({
+            "author": sender,
+            "note": str(counter_note).strip(),
+            "source_url": self._sanitize_https_url(counter_source_url, "counter source"),
+            "block_number": int(gl.vm.block_number),
+        })
+        review["counter_entries"] = counter_entries
+        # Keep legacy fields for compatibility (latest entry)
         review["counter_note"] = str(counter_note).strip()
         review["counter_source_url"] = self._sanitize_https_url(counter_source_url, "counter source")
         review["status"] = "countered"
         self._save_review(normalized_review_id, review)
+
+    CHALLENGE_WINDOW = 100  # blocks to wait after counter-context before resolving
 
     @gl.public.write
     def resolve_review(self, review_id: str) -> None:
@@ -328,7 +346,17 @@ Counter source:
         review = self._load_review(normalized_review_id)
         if review["resolved"]:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Review is already resolved")
+        sender = str(gl.message.sender_address)
         policy = self._load_policy(review["policy_id"])
+        # Only submitter or policy creator can resolve
+        if sender != review["submitter"] and sender != policy["created_by"]:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} Only submitter or policy creator can resolve")
+        # If counter-context was submitted, enforce challenge window
+        counter_entries = review.get("counter_entries", [])
+        if len(counter_entries) > 0:
+            last_counter_block = counter_entries[-1].get("block_number", 0)
+            if int(gl.vm.block_number) < last_counter_block + self.CHALLENGE_WINDOW:
+                raise gl.vm.UserError(f"{ERROR_EXPECTED} Challenge window active — wait {self.CHALLENGE_WINDOW} blocks after last counter-context")
 
         def leader_fn():
             return self._run_policy_review(review, policy)
