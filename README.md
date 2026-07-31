@@ -7,17 +7,13 @@ It is built for builders who need a reusable contract that can:
 
 - register a policy from a real web source
 - submit a document, page, listing, or proposal for review
-- attach counter-context before finalization
-- resolve a final verdict through GenLayer-native consensus
+- attach counter-context before finalization (authorization-gated, append-only)
+- resolve a final verdict through GenLayer-native consensus (challenge-window protected)
 - persist a stable on-chain judgment for downstream apps and contracts
 
 This repo intentionally targets `Builder -> Intelligent Contracts`, not
 `Projects`. The focus is a reusable primitive, clear state design, meaningful
 consensus logic, and reviewer-friendly documentation.
-
-## Visual Overview
-
-![GenLayer Policy Sentinel architecture](docs/images/repo-architecture.svg)
 
 ## Why This Fits Intelligent Contracts
 
@@ -43,6 +39,29 @@ The non-deterministic result materially affects contract state because the
 final verdict, risk, rule references, confidence, and resolution status are
 persisted only after consensus succeeds.
 
+## Review Lifecycle Integrity
+
+The review lifecycle enforces two integrity guards:
+
+### Authorization
+
+Both `submit_counter_context` and `resolve_review` are restricted to the review
+submitter and the policy creator. Unrelated callers are rejected.
+
+### Append-Only Counter-Context
+
+Counter-context entries are stored as an append-only list (`counter_entries`).
+Each entry records the author, note, source URL, and block number. New entries
+are appended — never overwritten. Legacy fields (`counter_note`,
+`counter_source_url`) are kept for backward compatibility and reflect the latest
+entry.
+
+### Challenge Window
+
+After counter-context is submitted, `resolve_review` cannot be called until 100
+blocks have passed since the last counter entry. This gives the other party time
+to respond before finalization.
+
 ## Contract Primitive
 
 - Contract file: `contracts/genlayer_policy_sentinel.py`
@@ -51,17 +70,21 @@ persisted only after consensus succeeds.
 
 ### Public Write Methods
 
-- `register_policy(...)`
-- `submit_review(...)`
-- `submit_counter_context(...)`
-- `resolve_review(...)`
+| Method | Authorization | Description |
+|--------|--------------|-------------|
+| `register_policy(...)` | Any caller | Register a new policy with title, guidance, and source URL |
+| `submit_review(...)` | Any caller | Submit a subject for review against a registered policy |
+| `submit_counter_context(...)` | Submitter or policy creator only | Append counter-context (append-only, cannot overwrite) |
+| `resolve_review(...)` | Submitter or policy creator only | Run consensus and finalize verdict (challenge-window enforced) |
 
 ### Public View Methods
 
-- `get_policy_json(...)`
-- `get_review_json(...)`
-- `get_review_ids()`
-- `latest_summary(...)`
+| Method | Description |
+|--------|-------------|
+| `get_policy_json(...)` | Read full policy record |
+| `get_review_json(...)` | Read full review record |
+| `get_review_ids()` | List all review IDs |
+| `latest_summary(...)` | One-line review status summary |
 
 ## State Model
 
@@ -72,7 +95,7 @@ persisted only after consensus succeeds.
 - subject type
 - policy guidance
 - policy source URL
-- creator
+- creator (address)
 - active flag
 
 ### Review record
@@ -83,7 +106,9 @@ persisted only after consensus succeeds.
 - subject excerpt
 - subject source URL
 - context note
-- counter note and counter source URL
+- counter note and counter source URL (legacy, latest entry)
+- **counter entries** (append-only list with author, note, source URL, block number)
+- submitter (address)
 - status
 - resolved flag
 - consensus finalized flag
@@ -94,19 +119,25 @@ persisted only after consensus succeeds.
 - applicable policy rules
 - rationale
 
-This makes the primitive readable for both builders and reviewers.
-
 ## How Consensus Works
 
-1. a builder registers a policy with real guidance and a source URL
-2. another builder or app submits a subject for review
-3. optional counter-context can be added before resolution
-4. `resolve_review(...)` fetches the policy and subject snapshots
-5. the contract asks the model for a structured compliance judgment
-6. `gl.vm.run_nondet_unsafe(...)` compares leader and validator outcomes
-7. only the consensus-approved result is persisted on-chain
+1. A builder registers a policy with real guidance and a source URL
+2. Another builder or app submits a subject for review
+3. Optional counter-context can be added (submitter or policy creator only)
+4. If counter-context is added, a challenge window of 100 blocks is enforced
+5. `resolve_review(...)` fetches the policy and subject snapshots
+6. The contract asks the model for a structured compliance judgment
+7. `gl.vm.run_nondet_unsafe(...)` compares leader and validator outcomes
+8. Only the consensus-approved result is persisted on-chain
 
-The returned structured result contains:
+### Consensus Validation
+
+- Leader and validator verdicts must match exactly
+- Risk levels must match exactly
+- Violation counts must agree within ±1
+- A `needs_review` verdict cannot be paired with high confidence from the validator
+
+### Structured Result
 
 - `verdict`: `compliant | non_compliant | needs_review`
 - `risk_level`: `low | medium | high`
@@ -139,103 +170,63 @@ requirements before approval.
 
 ```text
 genlayer-policy-sentinel/
-|-- contracts/
-|   `-- genlayer_policy_sentinel.py
-|-- deploy/
-|   `-- 001_deploy_policy_sentinel.mjs
-|-- docs/
-|   `-- contract-design.md
-|-- examples/
-|   `-- example-reviews.md
-|-- scripts/
-|   `-- verify-contract.mjs
-|-- src/
-|   `-- genlayer-policy-sentinel-client.ts
-|-- submission-pack/
-|   |-- JUDGE-NOTES.md
-|   `-- SUBMISSION-DESCRIPTION.md
-|-- tests/
-|   `-- submission-proof.test.mjs
-|-- .gitignore
-|-- package.json
-`-- README.md
+├── contracts/
+│   └── genlayer_policy_sentinel.py        # core intelligent contract primitive
+├── deploy/
+│   └── 001_deploy_policy_sentinel.mjs     # Studionet deploy helper
+├── docs/
+│   ├── contract-design.md                 # consensus and state design notes
+│   └── images/
+│       └── repo-architecture.svg          # visual repo and workflow illustration
+├── examples/
+│   └── example-reviews.md                 # reusable real-world review scenarios
+├── scripts/
+│   └── verify-contract.mjs                # signal checker for contract primitives
+├── src/
+│   └── genlayer-policy-sentinel-client.ts # real read/write client workflow
+├── submission-pack/
+│   ├── JUDGE-NOTES.md                     # reviewer-facing acceptance notes
+│   └── SUBMISSION-DESCRIPTION.md          # portal-ready summary
+├── tests/
+│   └── submission-proof.test.mjs          # proof that the repo is submission-ready
+├── .gitignore
+├── package.json
+└── README.md
 ```
-
-## Directory Tree With Purpose
-
-```text
-genlayer-policy-sentinel
-├─ contracts
-│  └─ genlayer_policy_sentinel.py        # core intelligent contract primitive
-├─ deploy
-│  └─ 001_deploy_policy_sentinel.mjs     # Studionet deploy helper
-├─ docs
-│  ├─ contract-design.md                 # consensus and state design notes
-│  └─ images
-│     └─ repo-architecture.svg           # visual repo and workflow illustration
-├─ examples
-│  └─ example-reviews.md                 # reusable real-world review scenarios
-├─ scripts
-│  └─ verify-contract.mjs                # signal checker for contract primitives
-├─ src
-│  └─ genlayer-policy-sentinel-client.ts # real read/write client workflow
-├─ submission-pack
-│  ├─ JUDGE-NOTES.md                     # reviewer-facing acceptance notes
-│  └─ SUBMISSION-DESCRIPTION.md          # portal-ready summary
-├─ tests
-│  └─ submission-proof.test.mjs          # proof that the repo is submission-ready
-├─ .gitignore
-├─ package.json
-└─ README.md
-```
-
-## Builder Reading Path
-
-If a reviewer or builder opens this repo for the first time, the best order is:
-
-1. `README.md`
-2. `contracts/genlayer_policy_sentinel.py`
-3. `src/genlayer-policy-sentinel-client.ts`
-4. `docs/contract-design.md`
-5. `tests/submission-proof.test.mjs`
-6. `submission-pack/JUDGE-NOTES.md`
 
 ## Flow Illustration
 
 ```mermaid
 flowchart TD
     A[Register Policy] --> B[Submit Review]
-    B --> C[Optional Counter Context]
-    C --> D[Fetch Policy Snapshot]
-    D --> E[Fetch Subject Snapshot]
-    E --> F[Prompt Structured Judgment]
-    F --> G[Validator Comparison]
-    G --> H[Persist Final On-Chain Verdict]
+    B --> C[Counter Context\nsubmitter or creator only\nappend-only]
+    C --> D[Challenge Window\n100 blocks]
+    D --> E[Resolve Review\nsubmitter or creator only]
+    E --> F[Fetch Policy Snapshot]
+    F --> G[Fetch Subject Snapshot]
+    G --> H[Prompt Structured Judgment]
+    H --> I[Validator Comparison]
+    I --> J[Persist Final On-Chain Verdict]
 ```
 
-## Deploy Path
+## Live Studionet Deployment
 
-Studionet deploy helper:
+Deployed on **July 31, 2026** (updated with authorization + challenge window):
 
-```bash
-node deploy/001_deploy_policy_sentinel.mjs
-```
+| Field | Value |
+|-------|-------|
+| Contract address | `0x5A1aA94D9cc04eEA5AB7e1d69d8b437C423498cE` |
+| Deployment tx | `0x330f9317fb080dffed4802be714d5945ddfbc3604f30c2b7c5d857393697ee38` |
+| Network | GenLayer Studionet (Chain ID 61999) |
+| Explorer contract | https://explorer-studio.genlayer.com/address/0x5A1aA94D9cc04eEA5AB7e1d69d8b437C423498cE |
+| Explorer transaction | https://explorer-studio.genlayer.com/tx/0x330f9317fb080dffed4802be714d5945ddfbc3604f30c2b7c5d857393697ee38 |
 
-Expected deploy flow:
+### Previous deployment (July 26, 2026 — before integrity fix)
 
-```bash
-genlayer network studionet
-genlayer deploy --contract contracts/genlayer_policy_sentinel.py --rpc https://studio.genlayer.com/api
-```
-
-### Live Studionet Deployment
-
-Deployed on **July 26, 2026**:
-
-- Contract address: `0x50C461d12aB74e2f0f9f3fe44a7823b13CCcF2A4`
-- Deployment tx: `0x6babe19d6cf8dfe0e72d632e35cd15efc38413bd4d31f2b16989e45b0c3d25a3`
-- Explorer contract: `https://explorer-studio.genlayer.com/contracts/0x50C461d12aB74e2f0f9f3fe44a7823b13CCcF2A4`
-- Explorer transaction: `https://explorer-studio.genlayer.com/tx/0x6babe19d6cf8dfe0e72d632e35cd15efc38413bd4d31f2b16989e45b0c3d25a3`
+| Field | Value |
+|-------|-------|
+| Contract address | `0x50C461d12aB74e2f0f9f3fe44a7823b13CCcF2A4` |
+| Deployment tx | `0x6babe19d6cf8dfe0e72d632e35cd15efc38413bd4d31f2b16989e45b0c3d25a3` |
 
 ## Minimal Client Integration
 
@@ -251,14 +242,9 @@ It shows how another builder can:
 - deploy the contract
 - register a policy
 - submit a review request
-- attach counter-context
-- resolve the final outcome
+- attach counter-context (with authorization check)
+- resolve the final outcome (with challenge window awareness)
 - read policy and review records back
-
-This improves reuse without turning the repo into a full frontend project.
-
-If you want to run the helper directly, install the `genlayer-js` package version
-that matches your local GenLayer SDK setup.
 
 ## Verification
 
@@ -283,6 +269,13 @@ The proof tests verify:
 - the client helper demonstrates reuse
 - the README documents purpose and verification clearly
 
+## Deploy
+
+```bash
+genlayer network studionet
+genlayer deploy --contract contracts/genlayer_policy_sentinel.py
+```
+
 ## Why This Matters Beyond One Demo
 
 Many GenLayer apps need the same pattern:
@@ -294,13 +287,6 @@ Many GenLayer apps need the same pattern:
 
 That makes this contract a reusable primitive for the ecosystem, not a one-off
 AI demo.
-
-## Submission Notes
-
-Portal-facing materials are included in:
-
-- `submission-pack/JUDGE-NOTES.md`
-- `submission-pack/SUBMISSION-DESCRIPTION.md`
 
 ## License
 
